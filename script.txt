@@ -1,0 +1,124 @@
+-- ============================
+-- 1. SCHEMA E TABELAS
+-- ============================
+CREATE SCHEMA IF NOT EXISTS lab_23102008;
+USE lab_23102008;
+
+CREATE TABLE pacientes (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  nome VARCHAR(100) NOT NULL,
+  cpf VARCHAR(14) NOT NULL,
+  data_nasc DATE NOT NULL
+);
+
+CREATE TABLE consultas (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  paciente_id INT NOT NULL,
+  data_consulta DATE NOT NULL,
+  especialidade VARCHAR(80) NOT NULL,
+  FOREIGN KEY (paciente_id) REFERENCES pacientes(id)
+);
+
+CREATE TABLE prontuarios (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  consulta_id INT NOT NULL,
+  observacao TEXT,
+  FOREIGN KEY (consulta_id) REFERENCES consultas(id)
+);
+
+CREATE TABLE auditoria (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  tabela VARCHAR(50) NOT NULL,
+  operacao VARCHAR(20) NOT NULL,
+  registro_id INT NOT NULL,
+  usuario VARCHAR(50) NOT NULL,
+  criado_em DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================
+-- 2. DADOS (5+ pacientes, 10+ consultas)
+-- ============================
+INSERT INTO pacientes (nome, cpf, data_nasc) VALUES
+('Ana Silva', '111.111.111-11', '1990-05-12'),
+('Bruno Costa', '222.222.222-22', '1985-08-23'),
+('Carla Souza', '333.333.333-33', '2000-01-15'),
+('Diego Alves', '444.444.444-44', '1978-11-30'),
+('Elisa Ramos', '555.555.555-55', '1995-03-07');
+
+INSERT INTO consultas (paciente_id, data_consulta, especialidade) VALUES
+(1, '2025-01-10', 'Cardiologia'),
+(1, '2025-03-22', 'Dermatologia'),
+(2, '2025-02-05', 'Ortopedia'),
+(2, '2025-06-18', 'Cardiologia'),
+(3, '2025-01-30', 'Pediatria'),
+(3, '2025-04-14', 'Neurologia'),
+(4, '2025-05-01', 'Clínico Geral'),
+(4, '2025-07-09', 'Cardiologia'),
+(5, '2025-02-20', 'Ginecologia'),
+(5, '2025-06-01', 'Dermatologia');
+
+INSERT INTO prontuarios (consulta_id, observacao) VALUES
+(1, 'Paciente estável, sem queixas.'),
+(2, 'Prescrito tratamento tópico.'),
+(3, 'Recomendado fisioterapia.');
+
+-- ============================
+-- 3. GRUPO A - PROCEDURE COM CURSOR + SIGNAL
+-- ============================
+DELIMITER //
+
+CREATE PROCEDURE sp_contar_consultas_2025(IN p_paciente_id INT)
+BEGIN
+  DECLARE v_existe INT DEFAULT 0;
+  DECLARE v_total INT DEFAULT 0;
+  DECLARE v_data DATE;
+  DECLARE v_fim INT DEFAULT 0;
+
+  DECLARE cur_consultas CURSOR FOR
+    SELECT data_consulta
+    FROM consultas
+    WHERE paciente_id = p_paciente_id
+      AND YEAR(data_consulta) = 2025;
+
+  DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_fim = 1;
+
+  SELECT COUNT(*) INTO v_existe FROM pacientes WHERE id = p_paciente_id;
+
+  IF v_existe = 0 THEN
+    SIGNAL SQLSTATE '45000'
+      SET MESSAGE_TEXT = 'Paciente não encontrado.';
+  END IF;
+
+  OPEN cur_consultas;
+
+  read_loop: LOOP
+    FETCH cur_consultas INTO v_data;
+    IF v_fim = 1 THEN
+      LEAVE read_loop;
+    END IF;
+    SET v_total = v_total + 1;
+  END LOOP;
+
+  CLOSE cur_consultas;
+
+  SELECT p_paciente_id AS paciente_id, v_total AS total_consultas_2025;
+END //
+
+DELIMITER ;
+
+CALL sp_contar_consultas_2025(1);
+CALL sp_contar_consultas_2025(999);
+
+
+EXPLAIN SELECT id, especialidade
+FROM consultas
+WHERE paciente_id = 1 AND data_consulta >= '2025-01-01';
+
+
+CREATE INDEX idx_consultas_paciente_data
+ON consultas (paciente_id, data_consulta);
+
+
+EXPLAIN SELECT id, especialidade
+FROM consultas
+WHERE paciente_id = 1 AND data_consulta >= '2025-01-01';
